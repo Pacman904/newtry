@@ -5,14 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chatbot mit Gemini</title>
   <style>
-    #chatbox { height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
-    #recordButton { margin-top: 10px; padding: 10px; }
+    body {
+      background-color: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+    #chatbox {
+      width: 100%;
+      height: 400px;
+      overflow-y: scroll;
+      border: 1px solid #fff;
+      padding: 10px;
+      background-color: #000;
+      color: #fff;
+    }
+    #onAir {
+      color: red;
+      font-size: 1.5em;
+      display: none;
+    }
+    #recordButton {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: green;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    #recordButton.stop {
+      background-color: red;
+    }
+    #browserMessages {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #fff;
+      background-color: #000;
+      color: #fff;
+    }
   </style>
 </head>
 <body>
+  <div id="onAir">On Air</div>
   <div id="chatbox"></div>
-  <button id="recordButton">Audio aufnehmen</button>
-  <script src="https://cdn.jsdelivr.net/npm/recorderjs/recorder.js"></script>
+  <button id="recordButton">Verbindung starten</button>
+  <div id="browserMessages"></div>
+  <script src="https://cdn.jsdelivr.net/npm/recorderjs@1.0.1/dist/recorder.min.js"></script>
   <script>
     const APP_ID = 'acP7SyEGEm8ge7GkW1h9DStkqe6gQRfy2XIlDkST';
     const REST_API_KEY = 'u74saAzlTt9vic4uL34twMnouLCeoy1AgKlmXwqZ';
@@ -20,6 +57,8 @@
     let recorder;
     const recordButton = document.getElementById('recordButton');
     const chatbox = document.getElementById('chatbox');
+    const onAir = document.getElementById('onAir');
+    const browserMessages = document.getElementById('browserMessages');
 
     recordButton.addEventListener('click', () => {
       if (!recorder) {
@@ -37,9 +76,14 @@
           const input = audioContext.createMediaStreamSource(stream);
           recorder = new Recorder(input, { numChannels: 1 }); // Mono-Audio
           recorder.record();
-          recordButton.textContent = 'Aufnahme stoppen';
+          recordButton.textContent = 'Verbindung stoppen';
+          recordButton.classList.add('stop');
+          onAir.style.display = 'block';
         })
-        .catch(err => console.error('Mikrofonzugriff fehlgeschlagen:', err));
+        .catch(err => {
+          console.error('Mikrofonzugriff fehlgeschlagen:', err);
+          browserMessages.innerHTML += `<p>Fehler: Mikrofonzugriff fehlgeschlagen</p>`;
+        });
     }
 
     // Audioaufnahme stoppen und senden
@@ -53,7 +97,9 @@
           sendAudioToBackend(base64Audio);
         };
       });
-      recordButton.textContent = 'Audio aufnehmen';
+      recordButton.textContent = 'Verbindung starten';
+      recordButton.classList.remove('stop');
+      onAir.style.display = 'none';
       recorder = null;
     }
 
@@ -75,7 +121,7 @@
         speak(botResponse); // Text-to-Speech
       } catch (error) {
         console.error('Fehler beim Senden:', error);
-        chatbox.innerHTML += `<p>Fehler: ${error.message}</p>`;
+        browserMessages.innerHTML += `<p>Fehler: ${error.message}</p>`;
       }
     }
 
