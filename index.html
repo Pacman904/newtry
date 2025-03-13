@@ -91,7 +91,7 @@
               this.silentCount++;
               if (this.silentCount >= this.silentThreshold) {
                 this.isSpeaking = false;
-                this.port.postMessage({ eventType: 'speechEnd', audioBuffer: this.buffer.slice() });
+                this.port.postMessage({ eventType: 'speechEnd', audioBuffer: new Float32Array(this.buffer) });
                 this.buffer = [];
                 this.silentCount = 0;
               }
@@ -159,7 +159,7 @@
 
     // Audio resamplen und an Backend senden
     async function processAndSendAudio(audioBuffer) {
-      const samples = new Float32Array(audioBuffer.reduce((acc, val) => acc.concat([...val]), []));
+      const samples = audioBuffer; // audioBuffer ist bereits ein Float32Array
       const originalBuffer = audioContext.createBuffer(1, samples.length, audioContext.sampleRate);
       originalBuffer.copyToChannel(samples, 0);
 
