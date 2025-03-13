@@ -5,43 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chatbot mit Gemini</title>
   <style>
-    body {
-      background-color: #000;
-      color: #fff;
-      font-family: Arial, sans-serif;
-    }
-    #chatbox {
-      width: 100%;
-      height: 400px;
-      overflow-y: scroll;
-      border: 1px solid #fff;
-      padding: 10px;
-      background-color: #000;
-      color: #fff;
-    }
-    #onAir {
-      color: red;
-      font-size: 1.5em;
-      display: none;
-    }
-    #recordButton {
-      margin-top: 10px;
-      padding: 10px;
-      background-color: green;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-    #recordButton.stop {
-      background-color: red;
-    }
-    #browserMessages {
-      margin-top: 10px;
-      padding: 10px;
-      border: 1px solid #fff;
-      background-color: #000;
-      color: #fff;
-    }
+    body { background-color: #000; color: #fff; font-family: Arial, sans-serif; }
+    #chatbox { width: 100%; height: 400px; overflow-y: scroll; border: 1px solid #fff; padding: 10px; background-color: #000; color: #fff; }
+    #onAir { color: red; font-size: 1.5em; display: none; }
+    #recordButton { margin-top: 10px; padding: 10px; background-color: green; color: white; border: none; cursor: pointer; }
+    #recordButton.stop { background-color: red; }
+    #browserMessages { margin-top: 10px; padding: 10px; border: 1px solid #fff; background-color: #000; color: #fff; }
   </style>
 </head>
 <body>
@@ -61,14 +30,13 @@
     const onAir = document.getElementById('onAir');
     const browserMessages = document.getElementById('browserMessages');
 
-    // Inline AudioWorkletProcessor-Code mit Sprachaktivitätserkennung
     const processorCode = `
       class RecorderProcessor extends AudioWorkletProcessor {
         constructor() {
           super();
           this.buffer = [];
-          this.speechThreshold = 0.05; // Schwellenwert für Sprache
-          this.silentThreshold = 10;   // Anzahl stiller Blöcke für Pause
+          this.speechThreshold = 0.05;
+          this.silentThreshold = 10;
           this.silentCount = 0;
           this.isSpeaking = false;
         }
@@ -76,7 +44,7 @@
         process(inputs) {
           const input = inputs[0];
           if (input.length > 0) {
-            const samples = input[0]; // Erster Kanal
+            const samples = input[0];
             const rms = Math.sqrt(samples.reduce((sum, val) => sum + val * val, 0) / samples.length);
 
             if (rms > this.speechThreshold) {
@@ -97,14 +65,12 @@
               }
             }
           }
-          return true; // Prozessor bleibt aktiv
+          return true;
         }
       }
-
       registerProcessor('recorder-processor', RecorderProcessor);
     `;
 
-    // AudioWorklet-Prozessor als Blob laden
     async function loadAudioWorklet() {
       audioContext = new AudioContext();
       const blob = new Blob([processorCode], { type: 'application/javascript' });
@@ -121,7 +87,6 @@
       }
     });
 
-    // Audioaufnahme starten
     function startRecording() {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(s => {
@@ -131,6 +96,7 @@
           input.connect(recorder);
           recorder.port.onmessage = (e) => {
             if (e.data.eventType === 'speechStart') {
+              window.speechSynthesis.cancel(); // Audioausgabe unterbrechen
               browserMessages.innerHTML += `<p>Sprache erkannt</p>`;
             } else if (e.data.eventType === 'speechEnd') {
               processAndSendAudio(e.data.audioBuffer);
@@ -146,7 +112,6 @@
         });
     }
 
-    // Audioaufnahme stoppen
     function stopRecording() {
       recorder.port.postMessage({ eventType: 'stop' });
       recorder.disconnect();
@@ -157,9 +122,13 @@
       recorder = null;
     }
 
-    // Audio resamplen und an Backend senden
     async function processAndSendAudio(audioBuffer) {
-      const samples = audioBuffer; // audioBuffer ist bereits ein Float32Array
+      const samples = audioBuffer;
+      if (!samples || samples.length === 0) {
+        browserMessages.innerHTML += `<p>Fehler: Keine Audiodaten vorhanden</p>`;
+        return;
+      }
+
       const originalBuffer = audioContext.createBuffer(1, samples.length, audioContext.sampleRate);
       originalBuffer.copyToChannel(samples, 0);
 
@@ -178,17 +147,15 @@
       const reader = new FileReader();
       reader.readAsDataURL(wavBlob);
       reader.onloadend = () => {
-        const base64Audio = reader.result.split(',')[1]; // Nur Base64-Daten
+        const base64Audio = reader.result.split(',')[1];
         sendAudioToBackend(base64Audio);
       };
     }
 
-    // WAV-Datei erstellen
     function encodeWAV(samples, sampleRate) {
       const buffer = new ArrayBuffer(44 + samples.length * 2);
       const view = new DataView(buffer);
 
-      // WAV-Header
       writeString(view, 0, 'RIFF');
       view.setUint32(4, 36 + samples.length * 2, true);
       writeString(view, 8, 'WAVE');
@@ -203,7 +170,6 @@
       writeString(view, 36, 'data');
       view.setUint32(40, samples.length * 2, true);
 
-      // Audiodaten
       let offset = 44;
       samples.forEach(sample => {
         const s = Math.max(-1, Math.min(1, sample));
@@ -220,7 +186,6 @@
       }
     }
 
-    // Audio an Backend senden
     async function sendAudioToBackend(base64Audio) {
       try {
         const response = await fetch('https://parseapi.back4app.com/functions/processAudio', {
@@ -233,19 +198,18 @@
           body: JSON.stringify({ audio: base64Audio })
         });
         const data = await response.json();
-        const botResponse = data.result; // Ergebnis der Cloud-Funktion
+        const botResponse = data.result;
         chatbox.innerHTML += `<p>Bot: ${botResponse}</p>`;
-        speak(botResponse); // Text-to-Speech
+        speak(botResponse);
       } catch (error) {
         console.error('Fehler beim Senden:', error);
         browserMessages.innerHTML += `<p>Fehler: ${error.message}</p>`;
       }
     }
 
-    // Text-to-Speech mit Web Speech API
     function speak(text) {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'de-DE'; // Deutsche Sprache
+      utterance.lang = 'de-DE'; // Deutsche Ausgabe
       window.speechSynthesis.speak(utterance);
     }
   </script>
