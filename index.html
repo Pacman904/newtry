@@ -61,8 +61,39 @@
     const onAir = document.getElementById('onAir');
     const browserMessages = document.getElementById('browserMessages');
 
-    recordButton.addEventListener('click', () => {
+    // Inline AudioWorkletProcessor-Code als String
+    const processorCode = `
+      class RecorderProcessor extends AudioWorkletProcessor {
+        constructor() {
+          super();
+          this.buffer = [];
+        }
+
+        process(inputs) {
+          const input = inputs[0];
+          if (input.length > 0) {
+            const samples = input[0]; // Erster Kanal
+            this.buffer.push(...samples);
+            this.port.postMessage({ eventType: 'data', audioBuffer: samples });
+          }
+          return true; // Prozessor bleibt aktiv
+        }
+      }
+
+      registerProcessor('recorder-processor', RecorderProcessor);
+    `;
+
+    // AudioWorklet-Prozessor als Blob laden
+    async function loadAudioWorklet() {
+      audioContext = new AudioContext();
+      const blob = new Blob([processorCode], { type: 'application/javascript' });
+      const blobURL = URL.createObjectURL(blob);
+      await audioContext.audioWorklet.addModule(blobURL);
+    }
+
+    recordButton.addEventListener('click', async () => {
       if (!recorder) {
+        if (!audioContext) await loadAudioWorklet();
         startRecording();
       } else {
         stopRecording();
@@ -73,15 +104,14 @@
     function startRecording() {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(stream => {
-          audioContext = new AudioContext();
           const input = audioContext.createMediaStreamSource(stream);
-          recorder = audioContext.createScriptProcessor(2048, 1, 1);
-          recorder.onaudioprocess = function(e) {
-            const samples = e.inputBuffer.getChannelData(0);
-            audioData.push(new Float32Array(samples));
-          };
+          recorder = new AudioWorkletNode(audioContext, 'recorder-processor');
           input.connect(recorder);
-          recorder.connect(audioContext.destination);
+          recorder.port.onmessage = (e) => {
+            if (e.data.eventType === 'data') {
+              audioData.push(e.data.audioBuffer);
+            }
+          };
           recordButton.textContent = 'Verbindung stoppen';
           recordButton.classList.add('stop');
           onAir.style.display = 'block';
@@ -94,7 +124,7 @@
 
     // Audioaufnahme stoppen
     function stopRecording() {
-      recorder.disconnect();
+      recorder.port.postMessage({ eventType: 'stop' });
       const wavBlob = encodeWAV(audioData, audioContext.sampleRate);
       const reader = new FileReader();
       reader.readAsDataURL(wavBlob);
@@ -111,12 +141,13 @@
 
     // WAV-Datei erstellen
     function encodeWAV(audioData, sampleRate) {
-      const buffer = new ArrayBuffer(44 + audioData.length * 2);
+      const numSamples = audioData.reduce((acc, val) => acc + val.length, 0);
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
       const view = new DataView(buffer);
 
       // WAV-Header
       writeString(view, 0, 'RIFF');
-      view.setUint32(4, 36 + audioData.length * 2, true);
+      view.setUint32(4, 36 + numSamples * 2, true);
       writeString(view, 8, 'WAVE');
       writeString(view, 12, 'fmt ');
       view.setUint32(16, 16, true);
@@ -127,7 +158,7 @@
       view.setUint16(32, 2, true);
       view.setUint16(34, 16, true);
       writeString(view, 36, 'data');
-      view.setUint32(40, audioData.length * 2, true);
+      view.setUint32(40, numSamples * 2, true);
 
       // Audiodaten
       let offset = 44;
