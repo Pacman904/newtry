@@ -49,7 +49,7 @@
   <div id="chatbox"></div>
   <button id="recordButton">Verbindung starten</button>
   <div id="browserMessages"></div>
-  <script src="https://cdn.jsdelivr.net/npm/recorderjs@1.0.1/dist/recorder.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/webaudiorecorder@latest/dist/WebAudioRecorder.min.js"></script>
   <script>
     const APP_ID = 'acP7SyEGEm8ge7GkW1h9DStkqe6gQRfy2XIlDkST';
     const REST_API_KEY = 'u74saAzlTt9vic4uL34twMnouLCeoy1AgKlmXwqZ';
@@ -74,29 +74,39 @@
         .then(stream => {
           const audioContext = new AudioContext();
           const input = audioContext.createMediaStreamSource(stream);
-          recorder = new Recorder(input, { numChannels: 1 }); // Mono-Audio
-          recorder.record();
+          recorder = new WebAudioRecorder(input, {
+            workerDir: 'https://cdn.jsdelivr.net/npm/webaudiorecorder@latest/dist/',
+            encoding: 'wav',
+            numChannels: 1,
+            onEncoderLoading: function(recorder, encoding) {
+              browserMessages.innerHTML += `<p>Lade Encoder für ${encoding}...</p>`;
+            },
+            onEncoderLoaded: function(recorder, encoding) {
+              browserMessages.innerHTML += `<p>Encoder für ${encoding} geladen.</p>`;
+            }
+          });
+          recorder.onComplete = function(recorder, blob) {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+              const base64Audio = reader.result.split(',')[1]; // Nur Base64-Daten
+              sendAudioToBackend(base64Audio);
+            };
+          };
+          recorder.startRecording();
           recordButton.textContent = 'Verbindung stoppen';
           recordButton.classList.add('stop');
           onAir.style.display = 'block';
         })
         .catch(err => {
           console.error('Mikrofonzugriff fehlgeschlagen:', err);
-          browserMessages.innerHTML += `<p>Fehler: Mikrofonzugriff fehlgeschlagen</p>`;
+          browserMessages.innerHTML += `<p>Fehler: Mikrofonzugriff fehlgeschlagen - ${err.message}</p>`;
         });
     }
 
-    // Audioaufnahme stoppen und senden
+    // Audioaufnahme stoppen
     function stopRecording() {
-      recorder.stop();
-      recorder.exportWAV(blob => {
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = () => {
-          const base64Audio = reader.result.split(',')[1]; // Nur Base64-Daten
-          sendAudioToBackend(base64Audio);
-        };
-      });
+      recorder.finishRecording();
       recordButton.textContent = 'Verbindung starten';
       recordButton.classList.remove('stop');
       onAir.style.display = 'none';
