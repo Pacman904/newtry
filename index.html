@@ -96,7 +96,7 @@
           input.connect(recorder);
           recorder.port.onmessage = (e) => {
             if (e.data.eventType === 'speechStart') {
-              window.speechSynthesis.cancel(); // Audioausgabe unterbrechen
+              window.speechSynthesis.cancel();
               browserMessages.innerHTML += `<p>Sprache erkannt</p>`;
             } else if (e.data.eventType === 'speechEnd') {
               processAndSendAudio(e.data.audioBuffer);
@@ -198,7 +198,8 @@
           body: JSON.stringify({ audio: base64Audio })
         });
         if (!response.ok) {
-          throw new Error(`HTTP Fehler: ${response.status} - ${response.statusText}`);
+          const errorText = await response.text();
+          throw new Error(`HTTP Fehler: ${response.status} - ${errorText}`);
         }
         const data = await response.json();
         const botResponse = data.result;
@@ -207,7 +208,6 @@
       } catch (error) {
         console.error('Fehler beim Senden:', error);
         browserMessages.innerHTML += `<p>Fehler beim Senden: ${error.message}</p>`;
-        // Zusätzliche Debug-Informationen
         console.log('Request Details:', {
           url: 'https://parseapi.back4app.com/functions/processAudio',
           headers: {
