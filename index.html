@@ -55,26 +55,47 @@
     
     let audioContext;
     let recorder;
-    let audioData = [];
+    let stream;
     const recordButton = document.getElementById('recordButton');
     const chatbox = document.getElementById('chatbox');
     const onAir = document.getElementById('onAir');
     const browserMessages = document.getElementById('browserMessages');
 
-    // Inline AudioWorkletProcessor-Code als String
+    // Inline AudioWorkletProcessor-Code mit Sprachaktivitätserkennung
     const processorCode = `
       class RecorderProcessor extends AudioWorkletProcessor {
         constructor() {
           super();
           this.buffer = [];
+          this.speechThreshold = 0.05; // Schwellenwert für Sprache
+          this.silentThreshold = 10;   // Anzahl stiller Blöcke für Pause
+          this.silentCount = 0;
+          this.isSpeaking = false;
         }
 
         process(inputs) {
           const input = inputs[0];
           if (input.length > 0) {
             const samples = input[0]; // Erster Kanal
-            this.buffer.push(...samples);
-            this.port.postMessage({ eventType: 'data', audioBuffer: samples });
+            const rms = Math.sqrt(samples.reduce((sum, val) => sum + val * val, 0) / samples.length);
+
+            if (rms > this.speechThreshold) {
+              this.buffer.push(...samples);
+              this.silentCount = 0;
+              if (!this.isSpeaking) {
+                this.isSpeaking = true;
+                this.port.postMessage({ eventType: 'speechStart' });
+              }
+            } else if (this.isSpeaking) {
+              this.buffer.push(...samples);
+              this.silentCount++;
+              if (this.silentCount >= this.silentThreshold) {
+                this.isSpeaking = false;
+                this.port.postMessage({ eventType: 'speechEnd', audioBuffer: this.buffer.slice() });
+                this.buffer = [];
+                this.silentCount = 0;
+              }
+            }
           }
           return true; // Prozessor bleibt aktiv
         }
@@ -103,13 +124,16 @@
     // Audioaufnahme starten
     function startRecording() {
       navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
+        .then(s => {
+          stream = s;
           const input = audioContext.createMediaStreamSource(stream);
           recorder = new AudioWorkletNode(audioContext, 'recorder-processor');
           input.connect(recorder);
           recorder.port.onmessage = (e) => {
-            if (e.data.eventType === 'data') {
-              audioData.push(e.data.audioBuffer);
+            if (e.data.eventType === 'speechStart') {
+              browserMessages.innerHTML += `<p>Sprache erkannt</p>`;
+            } else if (e.data.eventType === 'speechEnd') {
+              processAndSendAudio(e.data.audioBuffer);
             }
           };
           recordButton.textContent = 'Verbindung stoppen';
@@ -125,29 +149,48 @@
     // Audioaufnahme stoppen
     function stopRecording() {
       recorder.port.postMessage({ eventType: 'stop' });
-      const wavBlob = encodeWAV(audioData, audioContext.sampleRate);
+      recorder.disconnect();
+      stream.getTracks().forEach(track => track.stop());
+      recordButton.textContent = 'Verbindung starten';
+      recordButton.classList.remove('stop');
+      onAir.style.display = 'none';
+      recorder = null;
+    }
+
+    // Audio resamplen und an Backend senden
+    async function processAndSendAudio(audioBuffer) {
+      const samples = new Float32Array(audioBuffer.reduce((acc, val) => acc.concat([...val]), []));
+      const originalBuffer = audioContext.createBuffer(1, samples.length, audioContext.sampleRate);
+      originalBuffer.copyToChannel(samples, 0);
+
+      const targetSampleRate = 16000;
+      const duration = samples.length / audioContext.sampleRate;
+      const offlineContext = new OfflineAudioContext(1, Math.ceil(duration * targetSampleRate), targetSampleRate);
+      const offlineSource = offlineContext.createBufferSource();
+      offlineSource.buffer = originalBuffer;
+      offlineSource.connect(offlineContext.destination);
+      offlineSource.start();
+
+      const resampledBuffer = await offlineContext.startRendering();
+      const resampledSamples = resampledBuffer.getChannelData(0);
+      const wavBlob = encodeWAV(resampledSamples, targetSampleRate);
+
       const reader = new FileReader();
       reader.readAsDataURL(wavBlob);
       reader.onloadend = () => {
         const base64Audio = reader.result.split(',')[1]; // Nur Base64-Daten
         sendAudioToBackend(base64Audio);
       };
-      recordButton.textContent = 'Verbindung starten';
-      recordButton.classList.remove('stop');
-      onAir.style.display = 'none';
-      audioData = [];
-      recorder = null;
     }
 
     // WAV-Datei erstellen
-    function encodeWAV(audioData, sampleRate) {
-      const numSamples = audioData.reduce((acc, val) => acc + val.length, 0);
-      const buffer = new ArrayBuffer(44 + numSamples * 2);
+    function encodeWAV(samples, sampleRate) {
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
       const view = new DataView(buffer);
 
       // WAV-Header
       writeString(view, 0, 'RIFF');
-      view.setUint32(4, 36 + numSamples * 2, true);
+      view.setUint32(4, 36 + samples.length * 2, true);
       writeString(view, 8, 'WAVE');
       writeString(view, 12, 'fmt ');
       view.setUint32(16, 16, true);
@@ -158,16 +201,14 @@
       view.setUint16(32, 2, true);
       view.setUint16(34, 16, true);
       writeString(view, 36, 'data');
-      view.setUint32(40, numSamples * 2, true);
+      view.setUint32(40, samples.length * 2, true);
 
       // Audiodaten
       let offset = 44;
-      audioData.forEach(samples => {
-        samples.forEach(sample => {
-          const s = Math.max(-1, Math.min(1, sample));
-          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-          offset += 2;
-        });
+      samples.forEach(sample => {
+        const s = Math.max(-1, Math.min(1, sample));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
       });
 
       return new Blob([view], { type: 'audio/wav' });
