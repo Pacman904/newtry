@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chatbot mit Gemini</title>
+  <style>
+    #chatbox { height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
+    #recordButton { margin-top: 10px; padding: 10px; }
+  </style>
+</head>
+<body>
+  <div id="chatbox"></div>
+  <button id="recordButton">Audio aufnehmen</button>
+  <script src="https://cdn.jsdelivr.net/npm/recorderjs/recorder.js"></script>
+  <script>
+    const APP_ID = 'acP7SyEGEm8ge7GkW1h9DStkqe6gQRfy2XIlDkST';
+    const REST_API_KEY = 'u74saAzlTt9vic4uL34twMnouLCeoy1AgKlmXwqZ';
+    
+    let recorder;
+    const recordButton = document.getElementById('recordButton');
+    const chatbox = document.getElementById('chatbox');
+
+    recordButton.addEventListener('click', () => {
+      if (!recorder) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    });
+
+    // Audioaufnahme starten
+    function startRecording() {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          const audioContext = new AudioContext();
+          const input = audioContext.createMediaStreamSource(stream);
+          recorder = new Recorder(input, { numChannels: 1 }); // Mono-Audio
+          recorder.record();
+          recordButton.textContent = 'Aufnahme stoppen';
+        })
+        .catch(err => console.error('Mikrofonzugriff fehlgeschlagen:', err));
+    }
+
+    // Audioaufnahme stoppen und senden
+    function stopRecording() {
+      recorder.stop();
+      recorder.exportWAV(blob => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => {
+          const base64Audio = reader.result.split(',')[1]; // Nur Base64-Daten
+          sendAudioToBackend(base64Audio);
+        };
+      });
+      recordButton.textContent = 'Audio aufnehmen';
+      recorder = null;
+    }
+
+    // Audio an Backend senden
+    async function sendAudioToBackend(base64Audio) {
+      try {
+        const response = await fetch('https://parseapi.back4app.com/functions/processAudio', {
+          method: 'POST',
+          headers: {
+            'X-Parse-Application-Id': APP_ID,
+            'X-Parse-REST-API-Key': REST_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ audio: base64Audio })
+        });
+        const data = await response.json();
+        const botResponse = data.result; // Ergebnis der Cloud-Funktion
+        chatbox.innerHTML += `<p>Bot: ${botResponse}</p>`;
+        speak(botResponse); // Text-to-Speech
+      } catch (error) {
+        console.error('Fehler beim Senden:', error);
+        chatbox.innerHTML += `<p>Fehler: ${error.message}</p>`;
+      }
+    }
+
+    // Text-to-Speech mit Web Speech API
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'de-DE'; // Deutsche Sprache
+      window.speechSynthesis.speak(utterance);
+    }
+  </script>
+</body>
+</html>
