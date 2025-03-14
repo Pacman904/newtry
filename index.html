@@ -35,10 +35,10 @@
           super();
           this.buffer = [];
           this.speechThreshold = 0.05;
-          this.chunkSize = 1600; // 100 ms bei 16 kHz
-          this.port.onmessage = (e) => {
-            if (e.data === 'stop') this.buffer = [];
-          };
+          this.silentThreshold = 200; // 2 Sekunden Stille
+          this.minBufferLength = 48000; // 3 Sekunden bei 16 kHz
+          this.silentCount = 0;
+          this.isSpeaking = false;
         }
 
         process(inputs) {
@@ -49,9 +49,19 @@
 
             if (rms > this.speechThreshold) {
               this.buffer.push(...samples);
-              while (this.buffer.length >= this.chunkSize) {
-                const chunk = this.buffer.splice(0, this.chunkSize);
-                this.port.postMessage({ eventType: 'audioChunk', audioBuffer: new Float32Array(chunk) });
+              this.silentCount = 0;
+              if (!this.isSpeaking) {
+                this.isSpeaking = true;
+                this.port.postMessage({ eventType: 'speechStart' });
+              }
+            } else if (this.isSpeaking) {
+              this.buffer.push(...samples);
+              this.silentCount++;
+              if (this.silentCount >= this.silentThreshold && this.buffer.length >= this.minBufferLength) {
+                this.isSpeaking = false;
+                this.port.postMessage({ eventType: 'speechEnd', audioBuffer: new Float32Array(this.buffer) });
+                this.buffer = [];
+                this.silentCount = 0;
               }
             }
           }
@@ -90,7 +100,9 @@
             input.connect(recorder);
 
             recorder.port.onmessage = (e) => {
-              if (e.data.eventType === 'audioChunk') {
+              if (e.data.eventType === 'speechStart') {
+                browserMessages.innerHTML += `<p>Sprache erkannt</p>`;
+              } else if (e.data.eventType === 'speechEnd') {
                 sendAudioChunk(e.data.audioBuffer);
               }
             };
@@ -113,13 +125,9 @@
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        if (data.type === 'setupComplete') {
-          browserMessages.innerHTML += `<p>Sitzung eingerichtet</p>`;
-        } else if (data.type === 'audio') {
-          playAudio(data.data);
-          chatbox.innerHTML += `<p>Bot: [Audio empfangen]</p>`;
-        } else if (data.type === 'interrupted') {
-          browserMessages.innerHTML += `<p>Generierung unterbrochen</p>`;
+        if (data.type === 'text') {
+          chatbox.innerHTML += `<p>Bot: ${data.data}</p>`;
+          speak(data.data);
         } else if (data.type === 'error') {
           browserMessages.innerHTML += `<p>Fehler: ${data.message}</p>`;
         } else if (data.type === 'pong') {
@@ -152,28 +160,61 @@
     }
 
     function sendAudioChunk(audioBuffer) {
-      const pcmBuffer = new Int16Array(audioBuffer.length);
-      for (let i = 0; i < audioBuffer.length; i++) {
-        pcmBuffer[i] = Math.max(-32768, Math.min(32767, Math.round(audioBuffer[i] * 32767)));
+      const samples = audioBuffer;
+      if (!samples || samples.length === 0) {
+        browserMessages.innerHTML += `<p>Fehler: Keine Audiodaten vorhanden</p>`;
+        return;
       }
-      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcmBuffer.buffer)));
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'audio', chunk: base64Audio }));
+
+      const wavBlob = encodeWAV(samples, 16000);
+      const reader = new FileReader();
+      reader.readAsDataURL(wavBlob);
+      reader.onloadend = () => {
+        const base64Audio = reader.result.split(',')[1];
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'audio', chunk: base64Audio }));
+        }
+      };
+    }
+
+    function encodeWAV(samples, sampleRate) {
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
+
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, 36 + samples.length * 2, true);
+      writeString(view, 8, 'WAVE');
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeString(view, 36, 'data');
+      view.setUint32(40, samples.length * 2, true);
+
+      let offset = 44;
+      samples.forEach(sample => {
+        const s = Math.max(-1, Math.min(1, sample));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
+      });
+
+      return new Blob([view], { type: 'audio/wav' });
+    }
+
+    function writeString(view, offset, string) {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
       }
     }
 
-    function playAudio(audioBase64) {
-      const pcmData = new Uint8Array(atob(audioBase64).split('').map(c => c.charCodeAt(0)));
-      const audioContextOut = new AudioContext({ sampleRate: 24000 });
-      const audioBufferOut = audioContextOut.createBuffer(1, pcmData.length / 2, 24000);
-      const channelData = audioBufferOut.getChannelData(0);
-      for (let i = 0; i < pcmData.length / 2; i++) {
-        channelData[i] = ((pcmData[i * 2] | (pcmData[i * 2 + 1] << 8)) - 32768) / 32768;
-      }
-      const source = audioContextOut.createBufferSource();
-      source.buffer = audioBufferOut;
-      source.connect(audioContextOut.destination);
-      source.start();
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'de-DE';
+      window.speechSynthesis.speak(utterance);
     }
   </script>
 </body>
