@@ -35,8 +35,9 @@
         constructor() {
           super();
           this.buffer = [];
-          this.speechThreshold = 0.05;
-          this.silentThreshold = 10;
+          this.speechThreshold = 0.05; // Schwellwert für Sprache
+          this.silentThreshold = 50; // Erhöht auf 50 Frames (ca. 500-1000 ms Stille)
+          this.minBufferLength = 16000; // Mindestlänge des Buffers (ca. 1 Sekunde bei 16 kHz)
           this.silentCount = 0;
           this.isSpeaking = false;
         }
@@ -57,7 +58,7 @@
             } else if (this.isSpeaking) {
               this.buffer.push(...samples);
               this.silentCount++;
-              if (this.silentCount >= this.silentThreshold) {
+              if (this.silentCount >= this.silentThreshold && this.buffer.length >= this.minBufferLength) {
                 this.isSpeaking = false;
                 this.port.postMessage({ eventType: 'speechEnd', audioBuffer: new Float32Array(this.buffer) });
                 this.buffer = [];
