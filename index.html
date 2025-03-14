@@ -24,6 +24,7 @@
     let audioContext;
     let recorder;
     let stream;
+    let currentAudio = null; // Globale Variable für die aktuelle Audio-Instanz
     const recordButton = document.getElementById('recordButton');
     const chatbox = document.getElementById('chatbox');
     const onAir = document.getElementById('onAir');
@@ -101,6 +102,7 @@
 
             recorder.port.onmessage = (e) => {
               if (e.data.eventType === 'speechStart') {
+                stopCurrentAudio(); // Stoppe laufendes Audio bei neuer Spracheingabe
                 browserMessages.innerHTML += `<p>Sprache erkannt</p>`;
               } else if (e.data.eventType === 'speechEnd') {
                 sendAudioChunk(e.data.audioBuffer);
@@ -124,7 +126,7 @@
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log('Empfangene Nachricht:', data); // Logge die empfangene Nachricht
+        console.log('Empfangene Nachricht:', data);
         if (data.type === 'audio_response') {
           chatbox.innerHTML += `<p>Bot: ${data.data.substring(0, 50)}... (Audio)</p>`;
           playAudio(data.data);
@@ -153,6 +155,7 @@
         stream.getTracks().forEach(track => track.stop());
       }
       if (ws) ws.close();
+      stopCurrentAudio(); // Stoppe Audio beim Schließen der Verbindung
       recordButton.textContent = 'Verbindung starten';
       recordButton.classList.remove('stop');
       onAir.style.display = 'none';
@@ -171,7 +174,7 @@
       reader.readAsDataURL(wavBlob);
       reader.onloadend = () => {
         const base64Audio = reader.result.split(',')[1];
-        console.log('Sende Audiochunk, Länge:', base64Audio.length); // Logge gesendete Daten
+        console.log('Sende Audiochunk, Länge:', base64Audio.length);
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'audio', chunk: base64Audio }));
         }
@@ -212,10 +215,20 @@
       }
     }
 
+    function stopCurrentAudio() {
+      if (currentAudio) {
+        currentAudio.pause(); // Stoppe die Wiedergabe
+        currentAudio.currentTime = 0; // Setze die Wiedergabe zurück
+        currentAudio = null; // Entferne die Referenz
+        console.log('Aktuelles Audio gestoppt');
+      }
+    }
+
     function playAudio(base64Audio) {
-      console.log('Audio Base64 empfangen, Länge:', base64Audio.length); // Logge empfangene Audio-Daten
-      const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
-      audio.play().catch(err => {
+      console.log('Audio Base64 empfangen, Länge:', base64Audio.length);
+      stopCurrentAudio(); // Stoppe vorheriges Audio vor neuer Wiedergabe
+      currentAudio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
+      currentAudio.play().catch(err => {
         console.error('Audio-Wiedergabe fehlgeschlagen:', err);
         browserMessages.innerHTML += `<p>Fehler bei der Audio-Wiedergabe: ${err.message}</p>`;
       });
