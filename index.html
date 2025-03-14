@@ -24,7 +24,7 @@
     let audioContext;
     let recorder;
     let stream;
-    let currentAudio = null; // Globale Variable für die aktuelle Audio-Instanz
+    let currentAudio = null;
     const recordButton = document.getElementById('recordButton');
     const chatbox = document.getElementById('chatbox');
     const onAir = document.getElementById('onAir');
@@ -36,8 +36,8 @@
           super();
           this.buffer = [];
           this.speechThreshold = 0.05;
-          this.silentThreshold = 200;
-          this.minBufferLength = 48000;
+          this.silentThreshold = 100; // Reduziert auf 100 für schnellere Erkennung
+          this.minBufferLength = 32000; // Reduziert für kürzere Wartezeit
           this.silentCount = 0;
           this.isSpeaking = false;
         }
@@ -102,7 +102,7 @@
 
             recorder.port.onmessage = (e) => {
               if (e.data.eventType === 'speechStart') {
-                stopCurrentAudio(); // Stoppe laufendes Audio bei neuer Spracheingabe
+                stopCurrentAudio();
                 browserMessages.innerHTML += `<p>Sprache erkannt</p>`;
               } else if (e.data.eventType === 'speechEnd') {
                 sendAudioChunk(e.data.audioBuffer);
@@ -128,8 +128,8 @@
         const data = JSON.parse(event.data);
         console.log('Empfangene Nachricht:', data);
         if (data.type === 'audio_response') {
-          chatbox.innerHTML += `<p>Bot: ${data.text}</p>`; // Zeige den Text statt Base64
-          playAudio(data.audio); // Spiele das Audio ab
+          chatbox.innerHTML += `<p>Bot: ${data.text}</p>`;
+          playAudio(data.audio);
         } else if (data.type === 'error') {
           browserMessages.innerHTML += `<p>Fehler: ${data.message}</p>`;
         } else if (data.type === 'pong') {
@@ -225,10 +225,12 @@
     }
 
     function playAudio(base64Audio) {
-      console.log('Audio Base64 empfangen, Länge:', base64Audio.length);
-      stopCurrentAudio(); // Stoppe vorheriges Audio
+      console.time('AudioWiedergabe');
+      stopCurrentAudio();
       currentAudio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
-      currentAudio.play().catch(err => {
+      currentAudio.play().then(() => {
+        console.timeEnd('AudioWiedergabe');
+      }).catch(err => {
         console.error('Audio-Wiedergabe fehlgeschlagen:', err);
         browserMessages.innerHTML += `<p>Fehler bei der Audio-Wiedergabe: ${err.message}</p>`;
       });
