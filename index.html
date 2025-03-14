@@ -97,6 +97,13 @@
             recordButton.textContent = 'Verbindung stoppen';
             recordButton.classList.add('stop');
             onAir.style.display = 'block';
+
+            // Ping alle 60 Sekunden, um den Server wach zu halten
+            setInterval(() => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+              }
+            }, 60000);
           })
           .catch(err => {
             console.error('Mikrofonzugriff fehlgeschlagen:', err);
@@ -115,6 +122,8 @@
           browserMessages.innerHTML += `<p>Generierung unterbrochen</p>`;
         } else if (data.type === 'error') {
           browserMessages.innerHTML += `<p>Fehler: ${data.message}</p>`;
+        } else if (data.type === 'pong') {
+          console.log('Pong empfangen');
         }
       };
 
@@ -123,7 +132,10 @@
         browserMessages.innerHTML += `<p>WebSocket-Fehler</p>`;
       };
 
-      ws.onclose = () => stopRecording();
+      ws.onclose = () => {
+        console.log('WebSocket geschlossen');
+        stopRecording();
+      };
     }
 
     function stopRecording() {
