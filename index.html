@@ -19,7 +19,7 @@
   <button id="recordButton">Verbindung starten</button>
   <div id="browserMessages"></div>
   <script>
-    const WS_URL = 'wss://palettix-socket.glitch.me'; // Anpassen an Ihr Projekt
+    const WS_URL = 'wss://palettix-socket.glitch.me'; // Anpassen an dein Glitch-Projekt
     let ws;
     let audioContext;
     let recorder;
@@ -129,7 +129,7 @@
         console.log('Empfangene Nachricht:', data);
         if (data.type === 'audio_response') {
           chatbox.innerHTML += `<p>Bot: ${data.text}</p>`;
-          playAudio(data.audio);
+          playAudio(data.audio); // Audio wird jetzt als MP3 empfangen
         } else if (data.type === 'error') {
           browserMessages.innerHTML += `<p>Fehler: ${data.message}</p>`;
         } else if (data.type === 'pong') {
@@ -227,6 +227,7 @@
     function playAudio(base64Audio) {
       console.time('AudioWiedergabe');
       stopCurrentAudio();
+      // gTTS liefert MP3, daher wird audio/mp3 verwendet
       currentAudio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
       currentAudio.play().then(() => {
         console.timeEnd('AudioWiedergabe');
