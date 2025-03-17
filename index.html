@@ -19,7 +19,7 @@
   <button id="recordButton">Verbindung starten</button>
   <div id="browserMessages"></div>
   <script>
-    const WS_URL = 'wss://palettix-socket.glitch.me'; // Anpassen an dein Glitch-Projekt
+    const WS_URL = 'wss://palettix-socket.glitch.me'; // Anpassen an dein Projekt
     let ws;
     let audioContext;
     let recorder;
@@ -36,8 +36,8 @@
           super();
           this.buffer = [];
           this.speechThreshold = 0.05;
-          this.silentThreshold = 100; // Reduziert auf 100 für schnellere Erkennung
-          this.minBufferLength = 32000; // Reduziert für kürzere Wartezeit
+          this.silentThreshold = 100;
+          this.minBufferLength = 32000;
           this.silentCount = 0;
           this.isSpeaking = false;
         }
@@ -129,7 +129,7 @@
         console.log('Empfangene Nachricht:', data);
         if (data.type === 'audio_response') {
           chatbox.innerHTML += `<p>Bot: ${data.text}</p>`;
-          playAudio(data.audio); // Audio wird jetzt als MP3 empfangen
+          playAudio(data.audio);
         } else if (data.type === 'error') {
           browserMessages.innerHTML += `<p>Fehler: ${data.message}</p>`;
         } else if (data.type === 'pong') {
@@ -227,8 +227,7 @@
     function playAudio(base64Audio) {
       console.time('AudioWiedergabe');
       stopCurrentAudio();
-      // gTTS liefert MP3, daher wird audio/mp3 verwendet
-      currentAudio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
+      currentAudio = new Audio(`data:audio/wav;base64,${base64Audio}`); // WAV statt MP3
       currentAudio.play().then(() => {
         console.timeEnd('AudioWiedergabe');
       }).catch(err => {
