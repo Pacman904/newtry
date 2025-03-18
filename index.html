@@ -227,7 +227,7 @@
     function playAudio(base64Audio) {
       console.time('AudioWiedergabe');
       stopCurrentAudio();
-      currentAudio = new Audio(`data:audio/wav;base64,${base64Audio}`); // WAV statt MP3
+      currentAudio = new Audio(`data:audio/wav;base64,${base64Audio}`); // WAV von pyttsx3
       currentAudio.play().then(() => {
         console.timeEnd('AudioWiedergabe');
       }).catch(err => {
