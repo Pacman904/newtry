@@ -19,7 +19,7 @@
   <button id="recordButton">Verbindung starten</button>
   <div id="browserMessages"></div>
   <script>
-    const WS_URL = 'wss://palettix-socket.glitch.me'; // Anpassen an dein Projekt
+    const WS_URL = 'wss://palettixpython.glitch.me:3001'; // Ersetze mit deinem Glitch-Projektnamen
     let ws;
     let audioContext;
     let recorder;
@@ -227,7 +227,7 @@
     function playAudio(base64Audio) {
       console.time('AudioWiedergabe');
       stopCurrentAudio();
-      currentAudio = new Audio(`data:audio/wav;base64,${base64Audio}`); // WAV von pyttsx3
+      currentAudio = new Audio(`data:audio/wav;base64,${base64Audio}`);
       currentAudio.play().then(() => {
         console.timeEnd('AudioWiedergabe');
       }).catch(err => {
